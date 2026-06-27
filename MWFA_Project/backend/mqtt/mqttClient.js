@@ -97,6 +97,9 @@ function connect() {
         case 'rf':
           await handleRf(deviceId, parsed);
           break;
+        case 'scan_result':
+          await handleScanResult(deviceId, parsed);
+          break;
         default:
           console.log(`[MQTT] Unknown event type: ${eventType}`);
       }
@@ -282,6 +285,58 @@ async function handleRf(deviceId, data) {
   });
 
   console.log(`[MQTT] 📻 RF: ${data.frequency}MHz | ${data.protocol || 'RAW'} | val=${data.value}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Handler: mwfa/<deviceId>/scan_result
+// Payload: { target: "192.168.1.1", openPorts: [80, 443] }
+// ─────────────────────────────────────────────────────────────────────────────
+async function handleScanResult(deviceId, data) {
+  if (!data.target) throw new Error('Missing target in scan_result payload');
+
+  const relay = await ensureRelayDevice(deviceId);
+
+  // البحث عن الجهاز حسب IP
+  const device = await prisma.device.findFirst({
+    where: { ipAddress: data.target },
+    orderBy: { lastSeen: 'desc' }
+  });
+
+  if (!device) {
+      console.warn(`[MQTT] Received scan result for ${data.target} but device not found in DB`);
+      return;
+  }
+
+  // تحديث حالة القيد "running" الخاص بالفحص
+  const scanRecord = await prisma.scanResult.findFirst({
+      where: { deviceId: device.id, status: 'running', scanType: 'reverse_port_scan' },
+      orderBy: { scannedAt: 'desc' }
+  });
+
+  if (scanRecord) {
+      await prisma.scanResult.update({
+          where: { id: scanRecord.id },
+          data: {
+              status: 'done',
+              openPorts: JSON.stringify(data.openPorts || []),
+              rawOutput: `TCP Scan from T-Embed. Open ports: ${(data.openPorts || []).join(', ')}`
+          }
+      });
+  } else {
+      // إذا لم يكن هناك قيد مسبق، قم بإنشائه
+      await prisma.scanResult.create({
+          data: {
+              deviceId: device.id,
+              scanType: 'reverse_port_scan',
+              status: 'done',
+              mcpToolUsed: 'tembed_tcp',
+              openPorts: JSON.stringify(data.openPorts || []),
+              rawOutput: `TCP Scan from T-Embed. Open ports: ${(data.openPorts || []).join(', ')}`
+          }
+      });
+  }
+
+  console.log(`[MQTT] 🚀 Scan Result for ${data.target}: Open Ports [${(data.openPorts || []).join(', ')}]`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

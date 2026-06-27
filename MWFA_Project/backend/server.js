@@ -186,21 +186,56 @@ app.get('/api/scans', async (req, res) => {
   }
 });
 
-/** POST /api/scans/trigger — تشغيل فحص يدوي */
+/** POST /api/scans/trigger — تشغيل فحص عكسي عبر القطعة */
 app.post('/api/scans/trigger', async (req, res) => {
-  const { deviceId } = req.body;
+  const { deviceId, ports } = req.body;
   if (!deviceId) return res.status(400).json({ error: 'deviceId is required' });
 
   try {
-    const device = await prisma.device.findUnique({ where: { id: parseInt(deviceId) } });
+    const device = await prisma.device.findUnique({ 
+        where: { id: parseInt(deviceId) },
+        include: { arpScans: { include: { relayDevice: true }, take: 1, orderBy: { scannedAt: 'desc' } } }
+    });
+    
     if (!device)           return res.status(404).json({ error: 'Device not found' });
     if (!device.ipAddress) return res.status(400).json({ error: 'Device has no IP address' });
+    
+    // إيجاد الـ Relay الذي اكتشف هذا الجهاز
+    const relayDeviceId = device.arpScans?.[0]?.relayDevice?.deviceId;
+    if (!relayDeviceId) return res.status(400).json({ error: 'No associated relay device found to perform the scan' });
 
-    // تشغيل الفحص بشكل غير متزامن
-    mcpService.scanTarget(device, device.ipAddress).catch(console.error);
+    // المنافذ الافتراضية إذا لم يرسل المستخدم
+    const scanPorts = ports || [80, 443, 22, 21, 8080, 445, 3389];
 
-    res.json({ message: `Scan triggered for ${device.ipAddress}`, deviceId });
+    const commandPayload = {
+        command: "port_scan",
+        target: device.ipAddress,
+        ports: scanPorts
+    };
+
+    const topic = `mwfa/${relayDeviceId}/cmd`;
+    const mqtt = mqttClient.getClient();
+    
+    if (mqtt && mqtt.connected) {
+        mqtt.publish(topic, JSON.stringify(commandPayload), { qos: 1 });
+        
+        // حفظ حالة الفحص كقيد مبدئي
+        await prisma.scanResult.create({
+          data: {
+            deviceId:    device.id,
+            scanType:    'reverse_port_scan',
+            status:      'running',
+            mcpToolUsed: 'tembed_tcp',
+          },
+        });
+
+        res.json({ message: `Reverse scan command sent for ${device.ipAddress} via ${relayDeviceId}`, target: device.ipAddress });
+    } else {
+        res.status(503).json({ error: 'MQTT Broker is not connected' });
+    }
+
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
