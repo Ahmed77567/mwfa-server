@@ -220,8 +220,6 @@ async function healthCheck() {
   }
 }
 
-  healthCheck,
-};
 
 /**
  * فحص هدف مخصص (دومين أو IP) من الواجهة
