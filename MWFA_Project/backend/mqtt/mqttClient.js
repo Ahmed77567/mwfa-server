@@ -254,13 +254,9 @@ async function handleArp(deviceId, data) {
 
   console.log(`[MQTT] 🖥️  ARP: ${data.macAddress} → ${data.ipAddress}`);
 
-  // ── تفعيل MCP Security Scan تلقائياً على الأجهزة الجديدة ──────────────
-  if (data.ipAddress && !data.isGateway) {
-    console.log(`[MCP] 🚀 Triggering security scan for ${data.ipAddress}`);
-    mcpService.scanTarget(device, data.ipAddress).catch((err) => {
-      console.warn('[MCP] Scan failed (non-critical):', err.message);
-    });
-  }
+  // ── لا نقوم بفحص تلقائي مباشر بعد الآن ──────────────
+  // الكالي لينكس لا يملك صلاحية دخول الشبكة المحلية من Railway
+  // سنستبدله لاحقاً بنظام إرسال أوامر عبر MQTT للقطعة لتفحص هي.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
