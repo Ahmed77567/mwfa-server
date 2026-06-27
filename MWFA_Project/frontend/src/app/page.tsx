@@ -231,6 +231,14 @@ export default function Dashboard() {
             </form>
           </section>
 
+          {/* Local Hardware Grouping */}
+          <div className="xl:col-span-2 mt-8 mb-4">
+            <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400 flex items-center gap-3 border-b border-neutral-800 pb-4">
+              <span className="text-emerald-400">🔌</span> Local Hardware & Devices
+            </h2>
+            <p className="text-neutral-400 mt-2 text-sm">Devices and Networks discovered by your T-Embed hardware locally.</p>
+          </div>
+
           {/* Networks Panel */}
           <section className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
