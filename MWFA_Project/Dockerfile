@@ -1,4 +1,4 @@
-# 1. الصورة الأساسية
+﻿# 1. الصورة الأساسية
 FROM cyberillo/kali-mcp-server:latest
 
 # 2. تثبيت بيئة Node.js
