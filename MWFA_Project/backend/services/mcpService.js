@@ -83,7 +83,7 @@ async function mcpRequest(method, params = {}) {
   const timer = setTimeout(() => controller.abort(), MCP_TIMEOUT);
 
   try {
-    const res = await fetch(`${MCP_URL}/mcp`, {
+    const res = await fetch(`${MCP_URL}/message`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
