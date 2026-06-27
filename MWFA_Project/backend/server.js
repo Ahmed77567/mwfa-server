@@ -200,10 +200,6 @@ app.post('/api/scans/trigger', async (req, res) => {
     if (!device)           return res.status(404).json({ error: 'Device not found' });
     if (!device.ipAddress) return res.status(400).json({ error: 'Device has no IP address' });
     
-    // إيجاد الـ Relay الذي اكتشف هذا الجهاز
-    const relayDeviceId = device.arpScans?.[0]?.relayDevice?.deviceId;
-    if (!relayDeviceId) return res.status(400).json({ error: 'No associated relay device found to perform the scan' });
-
     // المنافذ الافتراضية إذا لم يرسل المستخدم
     const scanPorts = ports || [80, 443, 22, 21, 8080, 445, 3389];
 
