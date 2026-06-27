@@ -81,15 +81,18 @@ const SCAN_PROFILES = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// JSON-RPC Helper
+// JSON-RPC Helper — with automatic localhost fallback
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function mcpRequest(method, params = {}) {
+// الـ URL الفعلي اللي يشتغل (يُكتشف أوتوماتيك عند أول نجاح)
+let activeUrl = MCP_URL;
+
+async function _tryRequest(url, method, params, timeoutMs) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), MCP_TIMEOUT);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(`${MCP_URL}/mcp`, {
+    const res = await fetch(`${url}/mcp`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
@@ -110,6 +113,30 @@ async function mcpRequest(method, params = {}) {
     return json.result;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function mcpRequest(method, params = {}) {
+  // 1. جرب الـ URL الأساسي (إما External أو localhost)
+  try {
+    const result = await _tryRequest(activeUrl, method, params, MCP_TIMEOUT);
+    return result;
+  } catch (primaryErr) {
+    // 2. لو الـ URL الأساسي مو localhost، جرب localhost كـ fallback
+    const localUrl = 'http://localhost:8000';
+    if (activeUrl !== localUrl) {
+      console.warn(`[MCP] ⚠️  Primary URL failed (${primaryErr.message.slice(0, 80)}), trying localhost fallback...`);
+      try {
+        const result = await _tryRequest(localUrl, method, params, 15000);
+        // نجح الـ fallback — نحفظه كـ URL الأساسي للمرات القادمة
+        console.log('[MCP] ✅ Switched to localhost:8000 permanently');
+        activeUrl = localUrl;
+        return result;
+      } catch (fallbackErr) {
+        throw new Error(`MCP unreachable. Primary: ${primaryErr.message.slice(0, 60)} | Fallback: ${fallbackErr.message.slice(0, 60)}`);
+      }
+    }
+    throw primaryErr;
   }
 }
 
@@ -315,16 +342,18 @@ async function healthCheck() {
     const tools = await listTools();
     return {
       status:      'ok',
-      mcpUrl:      MCP_URL,
+      configuredUrl: MCP_URL,
+      activeUrl:   activeUrl,
       toolsCount:  tools.length,
       tools:       tools.map(t => t.name),
       profiles:    Object.keys(SCAN_PROFILES),
     };
   } catch (err) {
     return {
-      status:  'unreachable',
-      mcpUrl:  MCP_URL,
-      error:   err.message,
+      status:      'unreachable',
+      configuredUrl: MCP_URL,
+      activeUrl:   activeUrl,
+      error:       err.message,
     };
   }
 }
