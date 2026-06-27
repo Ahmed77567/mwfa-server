@@ -221,6 +221,25 @@ app.post('/api/scans/trigger', async (req, res) => {
   }
 });
 
+/** POST /api/scans/custom — فحص هدف مخصص خارجي */
+app.post('/api/scans/custom', async (req, res) => {
+  const { target, scanProfile, ports } = req.body;
+  if (!target) return res.status(400).json({ error: 'target (IP or domain) is required' });
+
+  try {
+    // We don't await this so it runs in the background
+    mcpService.scanCustomTarget(target, { scanProfile, ports }).catch(err => {
+        console.error("Background Custom MCP scan failed:", err);
+    });
+
+    res.json({ message: `Cloud scan started for ${target} via Railway MCP`, target: target });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  ROUTES — Legacy HTTP Ingest (للتوافق مع الكود القديم)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

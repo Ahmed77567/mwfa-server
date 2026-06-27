@@ -220,10 +220,97 @@ async function healthCheck() {
   }
 }
 
+  healthCheck,
+};
+
+/**
+ * فحص هدف مخصص (دومين أو IP) من الواجهة
+ * @param {string} target
+ * @param {object} options
+ */
+async function scanCustomTarget(target, options = {}) {
+  // 1. البحث عن أو إنشاء "جهاز وهمي" لربط النتائج به
+  const dummyMac = `CUSTOM-${target.substring(0, 10)}`;
+  
+  const device = await prisma.device.upsert({
+    where: { macAddress: dummyMac },
+    update: { ipAddress: target, lastSeen: new Date() },
+    create: { 
+        macAddress: dummyMac, 
+        ipAddress: target,
+        hostname: target,
+        status: 'up',
+        vendor: 'Custom Cloud Target'
+    }
+  });
+
+  // 2. إنشاء سجل الفحص
+  const scanRecord = await prisma.scanResult.create({
+    data: {
+      deviceId:    device.id,
+      scanType:    options.scanType || 'nmap_custom',
+      status:      'running',
+      mcpToolUsed: 'nmap',
+    },
+  });
+
+  try {
+    // 3. تحديد نوع الفحص (Flags)
+    let flags = '-sV -T4';
+    
+    if (options.scanProfile === 'fast') {
+      flags = '-F -T4'; // Fast scan
+    } else if (options.scanProfile === 'full') {
+      flags = '-p- -sV -T4'; // All 65k ports
+    } else if (options.scanProfile === 'vuln') {
+      flags = '-sV --script=vuln -T4'; // Vulnerability script
+    } else if (options.scanProfile === 'os') {
+      flags = '-O -sV -T4'; // OS Detection
+    }
+
+    if (options.ports && options.ports.length > 0) {
+        flags = `-p ${options.ports} -sV -T4`; // Specific ports override
+    }
+
+    // 4. تنفيذ الفحص
+    const nmapOutput = await runTool('nmap', {
+      target: target,
+      flags:  flags,
+    });
+
+    const openPorts  = extractPorts(nmapOutput);
+    const portJson   = JSON.stringify(openPorts);
+
+    console.log(`[MCP] ✅ Custom Scan done for ${target} | Open ports: ${portJson}`);
+
+    await prisma.scanResult.update({
+      where: { id: scanRecord.id },
+      data: {
+        openPorts: portJson,
+        rawOutput: nmapOutput.slice(0, 8000),
+        status:    'done',
+      },
+    });
+
+    return { openPorts, nmapOutput };
+  } catch (err) {
+    console.error(`[MCP] Custom Scan failed for ${target}:`, err.message);
+    await prisma.scanResult.update({
+      where: { id: scanRecord.id },
+      data: {
+        status:    'failed',
+        rawOutput: err.message,
+      },
+    });
+    throw err;
+  }
+}
+
 module.exports = {
   runTool,
   listTools,
   scanTarget,
+  scanCustomTarget,
   scanVulnerabilities,
   healthCheck,
 };

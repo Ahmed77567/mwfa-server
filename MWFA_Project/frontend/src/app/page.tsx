@@ -35,6 +35,12 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [scanningDeviceId, setScanningDeviceId] = useState<number | null>(null);
 
+  // Custom Scan State
+  const [customTarget, setCustomTarget] = useState("");
+  const [customPorts, setCustomPorts] = useState("");
+  const [scanProfile, setScanProfile] = useState("fast");
+  const [customScanning, setCustomScanning] = useState(false);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -90,6 +96,37 @@ export default function Dashboard() {
     }
   };
 
+  const handleCustomScan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customTarget) return alert("Please enter a target IP or Domain");
+
+    setCustomScanning(true);
+    try {
+        const baseUrl = 'https://new-production-c82b.up.railway.app';
+        const res = await fetch(`${baseUrl}/api/scans/custom`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                target: customTarget, 
+                scanProfile, 
+                ports: customPorts 
+            })
+        });
+        
+        const data = await res.json();
+        if (!res.ok) {
+            alert(`Error starting scan: ${data.error}`);
+        } else {
+            setCustomTarget(""); // clear target on success
+        }
+    } catch (err) {
+        console.error("Failed to trigger custom scan", err);
+        alert("Failed to trigger custom scan");
+    } finally {
+        setCustomScanning(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 p-8 font-sans">
       <header className="mb-10 flex items-center justify-between border-b border-neutral-800 pb-6">
@@ -113,8 +150,87 @@ export default function Dashboard() {
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500"></div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
           
+          {/* Advanced Cloud Scanner Panel */}
+          <section className="bg-neutral-900/50 backdrop-blur-xl border border-indigo-500/30 rounded-2xl p-8 shadow-[0_0_40px_rgba(79,70,229,0.1)] xl:col-span-2 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
+            
+            <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+              <div>
+                <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 flex items-center gap-3">
+                  <span className="text-indigo-400">⚡</span> Advanced Cloud Scanner
+                </h2>
+                <p className="text-neutral-400 mt-2 text-sm">Target any Public IP or Domain. Powered by Railway Kali-MCP.</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleCustomScan} className="relative z-10 grid grid-cols-1 md:grid-cols-12 gap-4">
+              <div className="md:col-span-4">
+                <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Target (IP / Domain)</label>
+                <input 
+                  type="text" 
+                  value={customTarget}
+                  onChange={(e) => setCustomTarget(e.target.value)}
+                  placeholder="e.g. scanme.nmap.org or 8.8.8.8" 
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-3 text-sm text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                  required
+                />
+              </div>
+              
+              <div className="md:col-span-3">
+                <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Ports (Optional)</label>
+                <input 
+                  type="text" 
+                  value={customPorts}
+                  onChange={(e) => setCustomPorts(e.target.value)}
+                  placeholder="e.g. 80,443 or 1-1000" 
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-3 text-sm text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                />
+              </div>
+
+              <div className="md:col-span-3">
+                <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Scan Profile</label>
+                <select 
+                  value={scanProfile}
+                  onChange={(e) => setScanProfile(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-3 text-sm text-neutral-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all appearance-none cursor-pointer"
+                >
+                  <option value="fast">🚀 Fast Scan (Top 100)</option>
+                  <option value="os">💻 OS & Service Detection</option>
+                  <option value="vuln">🛡️ Vulnerability Scan</option>
+                  <option value="full">🔍 Full Port Scan (65k)</option>
+                </select>
+              </div>
+
+              <div className="md:col-span-2 flex items-end">
+                <button 
+                  type="submit"
+                  disabled={customScanning || !customTarget}
+                  className={`w-full h-[46px] rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-all ${
+                    customScanning 
+                    ? 'bg-indigo-900/50 text-indigo-400 cursor-wait border border-indigo-500/30' 
+                    : !customTarget
+                    ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]'
+                  }`}
+                >
+                  {customScanning ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
+                      Scanning...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                      Launch Scan
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </section>
+
           {/* Networks Panel */}
           <section className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
