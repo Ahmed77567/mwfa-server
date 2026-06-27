@@ -1,4 +1,4 @@
-﻿# 1. الصورة الأساسية
+# 1. الصورة الأساسية
 FROM cyberillo/kali-mcp-server:latest
 
 # 2. تثبيت بيئة Node.js
@@ -22,4 +22,5 @@ RUN npm install
 EXPOSE 3000
 
 # 8. تشغيل السيرفر
-CMD ["node", "server.js"]
+# نقوم بإنشاء مجلد /data أولاً لتجنب خطأ SQLite 14، ثم نُهيئ قاعدة البيانات، ثم نشغل السيرفر
+CMD ["sh", "-c", "mkdir -p /data && npx prisma db push --skip-generate && node server.js"]
