@@ -24,6 +24,7 @@ const MQTT_HOST     = process.env.MQTT_HOST     || 'localhost';
 const MQTT_PORT     = parseInt(process.env.MQTT_PORT || '1883', 10);
 const MQTT_USERNAME = process.env.MQTT_USERNAME || '';
 const MQTT_PASSWORD = process.env.MQTT_PASSWORD || '';
+const MQTT_PROTOCOL = process.env.MQTT_PROTOCOL || (MQTT_PORT === 8883 ? 'mqtts' : 'mqtt');
 const MQTT_CLIENT_ID = `mwfa-server-${Date.now()}`;
 
 let client = null;
@@ -32,7 +33,7 @@ let client = null;
 // الاتصال بالـ Broker
 // ─────────────────────────────────────────────────────────────────────────────
 function connect() {
-  const brokerUrl = `mqtt://${MQTT_HOST}:${MQTT_PORT}`;
+  const brokerUrl = `${MQTT_PROTOCOL}://${MQTT_HOST}:${MQTT_PORT}`;
   console.log(`[MQTT] Connecting to broker at ${brokerUrl} ...`);
 
   client = mqtt.connect(brokerUrl, {
