@@ -35,6 +35,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [scanningDeviceId, setScanningDeviceId] = useState<number | null>(null);
 
+  // Modal State for Raw Output
+  const [selectedScan, setSelectedScan] = useState<ScanResult | null>(null);
+
   // Custom Scan State
   const [customTarget, setCustomTarget] = useState("");
   const [customPorts, setCustomPorts] = useState("");
@@ -388,6 +391,11 @@ export default function Dashboard() {
                                     <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>
                                     Scanning...
                                 </span>
+                            ) : scan.status === 'failed' ? (
+                                <span className="bg-red-500/10 text-red-500 py-1 px-2 rounded font-bold text-xs flex items-center gap-2 w-max">
+                                    <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                                    Failed
+                                </span>
                             ) : (
                                 <span className="bg-emerald-500/10 text-emerald-500 py-1 px-2 rounded font-bold text-xs flex items-center gap-2 w-max">
                                     <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
@@ -398,16 +406,33 @@ export default function Dashboard() {
                         <td className="px-4 py-3 font-mono text-neutral-300">
                           {scan.status === 'running' ? (
                             <span className="text-neutral-500">Scanning via Cloud MCP...</span>
+                          ) : scan.status === 'failed' ? (
+                            <span className="text-red-500 font-medium">Scan Error</span>
                           ) : (
-                            JSON.parse(scan.openPorts || '[]').length > 0 ? (
-                              <span className="text-red-400 font-bold">{JSON.parse(scan.openPorts).join(', ')}</span>
-                            ) : (
-                              <span className="text-neutral-500">No open ports</span>
-                            )
+                            (() => {
+                              try {
+                                const ports = JSON.parse(scan.openPorts || '[]');
+                                return ports.length > 0 ? (
+                                  <span className="text-red-400 font-bold">{ports.join(', ')}</span>
+                                ) : (
+                                  <span className="text-neutral-500">No open ports</span>
+                                );
+                              } catch (e) {
+                                return <span className="text-neutral-500">No open ports</span>;
+                              }
+                            })()
                           )}
                         </td>
                         <td className="px-4 py-3 text-neutral-500">
                           {new Date(scan.scannedAt).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => setSelectedScan(scan)}
+                            className="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 border border-indigo-500/30 px-3 py-1 rounded text-xs font-bold transition-colors ml-auto"
+                          >
+                            View Nmap
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -419,6 +444,41 @@ export default function Dashboard() {
 
         </div>
       )}
+
+      {/* RAW OUTPUT MODAL */}
+      {selectedScan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[85vh] overflow-hidden">
+            <div className="p-4 border-b border-neutral-800 flex justify-between items-center bg-neutral-950">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <span className="text-indigo-400">🔍</span> Nmap Results: {selectedScan.device?.ipAddress}
+              </h3>
+              <button 
+                onClick={() => setSelectedScan(null)}
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            
+            <div className="p-4 bg-black flex-1 overflow-auto">
+              <pre className="text-emerald-400 font-mono text-sm leading-relaxed whitespace-pre-wrap">
+                {selectedScan.rawOutput || "No raw output available for this scan."}
+              </pre>
+            </div>
+            
+            <div className="p-4 border-t border-neutral-800 bg-neutral-950 flex justify-end">
+              <button 
+                onClick={() => setSelectedScan(null)}
+                className="bg-neutral-800 hover:bg-neutral-700 text-white px-6 py-2 rounded-lg font-bold transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
