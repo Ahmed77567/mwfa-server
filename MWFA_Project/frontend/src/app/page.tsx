@@ -397,7 +397,7 @@ export default function Dashboard() {
                         </td>
                         <td className="px-4 py-3 font-mono text-neutral-300">
                           {scan.status === 'running' ? (
-                            <span className="text-neutral-500">Waiting for hardware...</span>
+                            <span className="text-neutral-500">Scanning via Cloud MCP...</span>
                           ) : (
                             JSON.parse(scan.openPorts || '[]').length > 0 ? (
                               <span className="text-red-400 font-bold">{JSON.parse(scan.openPorts).join(', ')}</span>
