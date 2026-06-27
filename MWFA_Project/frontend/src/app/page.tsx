@@ -93,7 +93,9 @@ export default function Dashboard() {
   const [cloudStatus,   setCloudStatus]   = useState<'idle' | 'ok' | 'error'>('idle');
 
   // Device scanner
-  const [scanningId, setScanningId] = useState<number | null>(null);
+  const [scanningId,    setScanningId]    = useState<number | null>(null);
+  const [deviceProfile, setDeviceProfile] = useState('default');
+  const [devicePorts,   setDevicePorts]   = useState('');
 
   // Modal
   const [modalScan, setModalScan] = useState<ScanResult | null>(null);
@@ -142,7 +144,7 @@ export default function Dashboard() {
       await fetch(`${BASE_URL}/api/scans/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId }),
+        body: JSON.stringify({ deviceId, scanProfile: deviceProfile, ports: devicePorts }),
       });
     } catch { alert('Failed to trigger scan'); }
     finally { setScanningId(null); }
@@ -340,6 +342,35 @@ export default function Dashboard() {
                 <p className="text-amber-400 font-semibold text-sm">VPN Required for Device Mode</p>
                 <p className="text-amber-400/60 text-xs mt-0.5">The T-Embed device scans your local network. Connect a VPN or ensure the bridge is running to relay scan results back to the cloud backend.</p>
               </div>
+            </div>
+
+            {/* Scan Options Bar */}
+            <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl px-5 py-4 flex flex-wrap gap-4 items-end">
+              <div>
+                <label className="block text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Scan Profile</label>
+                <select
+                  value={deviceProfile} onChange={e => setDeviceProfile(e.target.value)}
+                  className="bg-neutral-950 border border-neutral-800 focus:border-emerald-500 rounded-lg px-4 py-2 text-sm text-white outline-none cursor-pointer min-w-[220px]"
+                >
+                  <option value="fast">🚀 Fast  — Top 100 ports</option>
+                  <option value="default">🔍 Default — Top 1000 + Versions</option>
+                  <option value="os">💻 OS & Service Detection</option>
+                  <option value="vuln">🛡️ Vulnerability Scan (NSE)</option>
+                  <option value="full">🌐 Full — All 65535 ports</option>
+                  <option value="udp">📡 UDP Scan — Top 100</option>
+                  <option value="aggressive">⚡ Aggressive (-A)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Ports (optional override)</label>
+                <input
+                  type="text" value={devicePorts}
+                  onChange={e => setDevicePorts(e.target.value)}
+                  placeholder="e.g. 22,80,443 or 1-1000"
+                  className="bg-neutral-950 border border-neutral-800 focus:border-emerald-500 rounded-lg px-4 py-2 text-sm text-white placeholder-neutral-600 outline-none min-w-[200px]"
+                />
+              </div>
+              <p className="text-xs text-neutral-600 self-end pb-2">← Profile applies to all device scans. Click ▶ Scan IP on any device below.</p>
             </div>
 
             {/* Stats Row */}

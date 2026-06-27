@@ -188,28 +188,26 @@ app.get('/api/scans', async (req, res) => {
 
 /** POST /api/scans/trigger — تشغيل فحص عكسي عبر القطعة */
 app.post('/api/scans/trigger', async (req, res) => {
-  const { deviceId, ports } = req.body;
+  const { deviceId, scanProfile, ports } = req.body;
   if (!deviceId) return res.status(400).json({ error: 'deviceId is required' });
 
   try {
     const device = await prisma.device.findUnique({ 
         where: { id: parseInt(deviceId) },
-        include: { arpScans: { include: { relayDevice: true }, take: 1, orderBy: { scannedAt: 'desc' } } }
     });
     
     if (!device)           return res.status(404).json({ error: 'Device not found' });
     if (!device.ipAddress) return res.status(400).json({ error: 'Device has no IP address' });
-    
-    // المنافذ الافتراضية إذا لم يرسل المستخدم
-    const scanPorts = ports || [80, 443, 22, 21, 8080, 445, 3389];
 
-    // Call the Kali-MCP service directly from the backend (which runs alongside it on Railway)
-    // We don't await this so it runs in the background and the UI can unblock immediately
-    mcpService.scanTarget(device, device.ipAddress).catch(err => {
-        console.error("Background MCP scan failed:", err);
+    mcpService.scanTarget(device, device.ipAddress, { scanProfile, ports }).catch(err => {
+        console.error('Background MCP scan failed:', err);
     });
 
-    res.json({ message: `Reverse scan started for ${device.ipAddress} via Railway MCP`, target: device.ipAddress });
+    res.json({ 
+      message: `Scan started for ${device.ipAddress}`,
+      target:  device.ipAddress,
+      profile: scanProfile || 'default',
+    });
 
   } catch (err) {
     console.error(err);
