@@ -30,8 +30,12 @@ app.get('/api/health', async (req, res) => {
   res.json({
     status:    'ok',
     timestamp: new Date().toISOString(),
-    mqtt:      { connected: mqttConnected },
-    mcp:       mcpStatus,
+    env: {
+      MCP_URL: process.env.MCP_URL || 'NOT SET (using localhost:8000)',
+      NODE_ENV: process.env.NODE_ENV || 'development',
+    },
+    mqtt: { connected: mqttConnected },
+    mcp:  mcpStatus,
   });
 });
 

@@ -1,26 +1,34 @@
-# 1. الصورة الأساسية
+# ─────────────────────────────────────────────────────
+# MWFA Dockerfile
+# بناء صورة واحدة تشغّل Kali-MCP + Node.js Backend
+# ─────────────────────────────────────────────────────
+
+# 1. الصورة الأساسية — تحتوي على Python + Kali + kali-mcp
 FROM cyberillo/kali-mcp-server:latest
 
-# 2. تثبيت بيئة Node.js
-RUN apt-get update && apt-get install -y curl
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-RUN apt-get install -y nodejs
+# 2. تثبيت Node.js 18
+RUN apt-get update && apt-get install -y curl ca-certificates && \
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 3. تحديد مجلد العمل الرئيسي
 WORKDIR /app
 
-# 4. نسخ كل محتويات المشروع (بما فيها مجلد backend)
+# 4. نسخ المشروع بالكامل
 COPY . .
 
-# 5. الدخول لمجلد الباكند حصراً
+# 5. تثبيت مكتبات Node.js للـ backend
 WORKDIR /app/backend
+RUN npm install --production && \
+    npx prisma generate
 
-# 6. تثبيت المكاتب (هنا package.json صار كدامه مباشرة)
-RUN npm install
+# 6. نسخ startup script وجعله قابل للتنفيذ
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
-# 7. فتح بورت الباكند
+# 7. فتح بورت الـ backend
 EXPOSE 3000
 
-# 8. تشغيل السيرفر
-# نقوم بإنشاء مجلد /data أولاً لتجنب خطأ SQLite 14، ثم نُهيئ قاعدة البيانات، ثم نشغل السيرفر
-CMD ["sh", "-c", "mkdir -p /data && npx prisma db push --skip-generate && node server.js"]
+# 8. تشغيل كلا السيرفرين عبر startup script
+CMD ["/app/start.sh"]
