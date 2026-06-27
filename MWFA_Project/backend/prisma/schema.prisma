@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────
+// ENUMS (stored as strings in SQLite)
+// ─────────────────────────────────────────
+
+// حالة الجهاز الحالية
+// SQLite doesn't support native enums; we use String + validation in app layer
+
+// ─────────────────────────────────────────
+// MODELS
+// ─────────────────────────────────────────
+
+/// جهاز الـ T-Embed الذي يقوم بالفحص
+model RelayDevice {
+  id          Int       @id @default(autoincrement())
+  deviceId    String    @unique                    // e.g. "device01"
+  label       String?                              // اسم مخصص للمستخدم
+  ipAddress   String?                              // IP الحالي
+  firmware    String?                              // Bruce firmware version
+  status      String    @default("offline")        // "online" | "offline" | "scanning"
+  lastSeen    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  wifiScans   WifiScanResult[]
+  arpScans    ArpScanResult[]
+  rfSignals   RfSignal[]
+  mqttLogs    MqttLog[]
+
+  @@index([status])
+  @@index([lastSeen])
+}
+
+/// شبكة وايفاي تم اكتشافها
+model Network {
+  id           Int      @id @default(autoincrement())
+  ssid         String
+  bssid        String   @unique
+  channel      Int?
+  rssi         Int?                                // Signal strength (dBm)
+  encryption   String?                             // "WPA2" | "WPA3" | "OPEN" | etc.
+  vendor       String?                             // OUI vendor lookup
+  latitude     Float?                              // GPS (مستقبلي)
+  longitude    Float?
+  firstSeen    DateTime @default(now())
+  lastSeen     DateTime @default(now())
+
+  // Relations
+  devices      Device[]
+  wifiScans    WifiScanResult[]
+
+  @@index([bssid])
+  @@index([ssid])
+  @@index([lastSeen])
+}
+
+/// جهاز تم اكتشافه على الشبكة (عبر ARP)
+model Device {
+  id           Int       @id @default(autoincrement())
+  macAddress   String    @unique
+  ipAddress    String?
+  hostname     String?
+  vendor       String?                             // OUI vendor (من MAC)
+  os           String?                             // OS fingerprint
+  isGateway    Boolean   @default(false)
+  status       String    @default("unknown")       // "up" | "down" | "unknown"
+  networkId    Int?
+  network      Network?  @relation(fields: [networkId], references: [id])
+  firstSeen    DateTime  @default(now())
+  lastSeen     DateTime  @default(now())
+
+  // Relations
+  arpScans     ArpScanResult[]
+  scanResults  ScanResult[]
+
+  @@index([macAddress])
+  @@index([ipAddress])
+  @@index([networkId])
+  @@index([lastSeen])
+}
+
+/// نتائج فحص الوايفاي القادمة من T-Embed (مسار mwfa/+/wifi)
+model WifiScanResult {
+  id           Int          @id @default(autoincrement())
+  relayDevice  RelayDevice  @relation(fields: [relayDeviceId], references: [id])
+  relayDeviceId Int
+  network      Network      @relation(fields: [networkId], references: [id])
+  networkId    Int
+  rssi         Int?
+  channel      Int?
+  scannedAt    DateTime     @default(now())
+
+  @@index([relayDeviceId])
+  @@index([networkId])
+  @@index([scannedAt])
+}
+
+/// نتائج ARP Scan القادمة من T-Embed (مسار mwfa/+/arp)
+model ArpScanResult {
+  id            Int          @id @default(autoincrement())
+  relayDevice   RelayDevice  @relation(fields: [relayDeviceId], references: [id])
+  relayDeviceId Int
+  device        Device       @relation(fields: [deviceId], references: [id])
+  deviceId      Int
+  scannedAt     DateTime     @default(now())
+
+  @@index([relayDeviceId])
+  @@index([deviceId])
+  @@index([scannedAt])
+}
+
+/// إشارات راديو (CC1101 Sub-GHz) القادمة من مسار mwfa/+/rf
+model RfSignal {
+  id            Int          @id @default(autoincrement())
+  relayDevice   RelayDevice  @relation(fields: [relayDeviceId], references: [id])
+  relayDeviceId Int
+  frequency     Float                              // بالـ MHz مثل 433.92
+  protocol      String?                            // "RC-Switch" | "RAW" | "OOK"
+  bits          Int?                               // عدد البتات
+  value         String?                            // القيمة المُفككة
+  rawData       String?                            // الـ raw hex string
+  rssi          Int?
+  duration      Int?                               // مدة النبضة بالـ microseconds
+  capturedAt    DateTime     @default(now())
+
+  @@index([relayDeviceId])
+  @@index([frequency])
+  @@index([capturedAt])
+}
+
+/// سجل كامل لكل رسالة MQTT واردة (للتدقيق والـ debugging)
+model MqttLog {
+  id            Int          @id @default(autoincrement())
+  relayDevice   RelayDevice? @relation(fields: [relayDeviceId], references: [id])
+  relayDeviceId Int?
+  topic         String                             // مسار MQTT
+  payload       String                             // الرسالة الخام JSON
+  processed     Boolean      @default(false)
+  error         String?                            // خطأ في المعالجة إن وجد
+  receivedAt    DateTime     @default(now())
+
+  @@index([topic])
+  @@index([processed])
+  @@index([receivedAt])
+}
+
+/// نتائج فحص الأمان من Kali-MCP
+model ScanResult {
+  id              Int      @id @default(autoincrement())
+  device          Device   @relation(fields: [deviceId], references: [id])
+  deviceId        Int
+  scanType        String   @default("nmap")        // "nmap" | "vuln" | "banner"
+  openPorts       String?                           // JSON string: ["22","80","443"]
+  vulnerabilities String?                           // JSON string: [{cve, severity, desc}]
+  rawOutput       String?                           // الخرج الخام من الأداة
+  mcpToolUsed     String?                           // اسم الـ MCP tool المُستخدم
+  status          String   @default("pending")      // "pending" | "running" | "done" | "failed"
+  scannedAt       DateTime @default(now())
+
+  @@index([deviceId])
+  @@index([status])
+  @@index([scannedAt])
+}
