@@ -12,18 +12,12 @@ const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
-// ── URL sanitizer — يصلح الـ URL إذا كان ناقصه حرف "h"
-function sanitizeMcpUrl(raw) {
-  if (!raw) return 'http://localhost:8000';
-  // لو المستخدم كتب ttps:// بدل https://
-  if (raw.startsWith('ttps://')) return 'h' + raw;
-  // لو بدأ بـ ttp:// بدل http://
-  if (raw.startsWith('ttp://')) return 'h' + raw;
-  return raw;
-}
+// Kali-MCP always runs in the same container via supergateway on port 8000
+// Force localhost regardless of any external MCP_URL env var
+const MCP_URL     = 'http://localhost:8000';
+const MCP_TIMEOUT = parseInt(process.env.MCP_TIMEOUT || '120000', 10);
 
-const MCP_URL     = sanitizeMcpUrl(process.env.MCP_URL);
-const MCP_TIMEOUT = parseInt(process.env.MCP_TIMEOUT || '120000', 10); // 2 دقيقة
+console.log(`[MCP] Using MCP_URL: ${MCP_URL}`);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // خرائط أنواع الفحص
@@ -81,18 +75,15 @@ const SCAN_PROFILES = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// JSON-RPC Helper — with automatic localhost fallback
+// JSON-RPC Helper
 // ─────────────────────────────────────────────────────────────────────────────
 
-// الـ URL الفعلي اللي يشتغل (يُكتشف أوتوماتيك عند أول نجاح)
-let activeUrl = MCP_URL;
-
-async function _tryRequest(url, method, params, timeoutMs) {
+async function mcpRequest(method, params = {}) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), MCP_TIMEOUT);
 
   try {
-    const res = await fetch(`${url}/mcp`, {
+    const res = await fetch(`${MCP_URL}/mcp`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
@@ -113,30 +104,6 @@ async function _tryRequest(url, method, params, timeoutMs) {
     return json.result;
   } finally {
     clearTimeout(timer);
-  }
-}
-
-async function mcpRequest(method, params = {}) {
-  // 1. جرب الـ URL الأساسي (إما External أو localhost)
-  try {
-    const result = await _tryRequest(activeUrl, method, params, MCP_TIMEOUT);
-    return result;
-  } catch (primaryErr) {
-    // 2. لو الـ URL الأساسي مو localhost، جرب localhost كـ fallback
-    const localUrl = 'http://localhost:8000';
-    if (activeUrl !== localUrl) {
-      console.warn(`[MCP] ⚠️  Primary URL failed (${primaryErr.message.slice(0, 80)}), trying localhost fallback...`);
-      try {
-        const result = await _tryRequest(localUrl, method, params, 15000);
-        // نجح الـ fallback — نحفظه كـ URL الأساسي للمرات القادمة
-        console.log('[MCP] ✅ Switched to localhost:8000 permanently');
-        activeUrl = localUrl;
-        return result;
-      } catch (fallbackErr) {
-        throw new Error(`MCP unreachable. Primary: ${primaryErr.message.slice(0, 60)} | Fallback: ${fallbackErr.message.slice(0, 60)}`);
-      }
-    }
-    throw primaryErr;
   }
 }
 
@@ -342,18 +309,16 @@ async function healthCheck() {
     const tools = await listTools();
     return {
       status:      'ok',
-      configuredUrl: MCP_URL,
-      activeUrl:   activeUrl,
+      mcpUrl:      MCP_URL,
       toolsCount:  tools.length,
       tools:       tools.map(t => t.name),
       profiles:    Object.keys(SCAN_PROFILES),
     };
   } catch (err) {
     return {
-      status:      'unreachable',
-      configuredUrl: MCP_URL,
-      activeUrl:   activeUrl,
-      error:       err.message,
+      status:  'unreachable',
+      mcpUrl:  MCP_URL,
+      error:   err.message,
     };
   }
 }
