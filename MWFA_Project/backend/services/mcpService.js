@@ -12,7 +12,17 @@ const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
-const MCP_URL     = process.env.MCP_URL || 'http://localhost:8000';
+// ── URL sanitizer — يصلح الـ URL إذا كان ناقصه حرف "h"
+function sanitizeMcpUrl(raw) {
+  if (!raw) return 'http://localhost:8000';
+  // لو المستخدم كتب ttps:// بدل https://
+  if (raw.startsWith('ttps://')) return 'h' + raw;
+  // لو بدأ بـ ttp:// بدل http://
+  if (raw.startsWith('ttp://')) return 'h' + raw;
+  return raw;
+}
+
+const MCP_URL     = sanitizeMcpUrl(process.env.MCP_URL);
 const MCP_TIMEOUT = parseInt(process.env.MCP_TIMEOUT || '120000', 10); // 2 دقيقة
 
 // ─────────────────────────────────────────────────────────────────────────────
