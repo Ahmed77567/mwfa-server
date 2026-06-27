@@ -100,6 +100,9 @@ function connect() {
         case 'scan_result':
           await handleScanResult(deviceId, parsed);
           break;
+        case 'cmd':
+          // Command topic intended for relay devices or bridge scripts, backend ignores it
+          break;
         default:
           console.log(`[MQTT] Unknown event type: ${eventType}`);
       }
