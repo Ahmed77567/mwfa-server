@@ -207,32 +207,13 @@ app.post('/api/scans/trigger', async (req, res) => {
     // المنافذ الافتراضية إذا لم يرسل المستخدم
     const scanPorts = ports || [80, 443, 22, 21, 8080, 445, 3389];
 
-    const commandPayload = {
-        command: "port_scan",
-        target: device.ipAddress,
-        ports: scanPorts
-    };
+    // Call the Kali-MCP service directly from the backend (which runs alongside it on Railway)
+    // We don't await this so it runs in the background and the UI can unblock immediately
+    mcpService.scanTarget(device, device.ipAddress).catch(err => {
+        console.error("Background MCP scan failed:", err);
+    });
 
-    const topic = `mwfa/${relayDeviceId}/cmd`;
-    const mqtt = mqttClient.getClient();
-    
-    if (mqtt && mqtt.connected) {
-        mqtt.publish(topic, JSON.stringify(commandPayload), { qos: 1 });
-        
-        // حفظ حالة الفحص كقيد مبدئي
-        await prisma.scanResult.create({
-          data: {
-            deviceId:    device.id,
-            scanType:    'reverse_port_scan',
-            status:      'running',
-            mcpToolUsed: 'tembed_tcp',
-          },
-        });
-
-        res.json({ message: `Reverse scan command sent for ${device.ipAddress} via ${relayDeviceId}`, target: device.ipAddress });
-    } else {
-        res.status(503).json({ error: 'MQTT Broker is not connected' });
-    }
+    res.json({ message: `Reverse scan started for ${device.ipAddress} via Railway MCP`, target: device.ipAddress });
 
   } catch (err) {
     console.error(err);
