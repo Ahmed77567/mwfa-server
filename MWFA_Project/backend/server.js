@@ -12,23 +12,8 @@ const mqttClient = require('./mqtt/mqttClient');
 const mcpService = require('./services/mcpService');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// START MCP PROXY (supergateway)
+// No more local Kali proxy here. The Python agent runs remotely.
 // ─────────────────────────────────────────────────────────────────────────────
-function startMcpProxy() {
-  console.log('[MCP PROXY] Starting supergateway to wrap kali-mcp...');
-  
-  // Trying common entrypoints. If one fails, we can see in logs.
-  const cmd = `supergateway --stdio "python3 -m kali_mcp" --port 8000`;
-  
-  const proxy = spawn(cmd, { shell: true });
-
-  proxy.stdout.on('data', (data) => console.log(`[Supergateway] ${data.toString().trim()}`));
-  proxy.stderr.on('data', (data) => console.error(`[Supergateway ERR] ${data.toString().trim()}`));
-  proxy.on('close', (code) => console.log(`[Supergateway] exited with code ${code}`));
-}
-
-// Start the proxy when server starts
-startMcpProxy();
 
 const app    = express();
 const prisma = new PrismaClient();

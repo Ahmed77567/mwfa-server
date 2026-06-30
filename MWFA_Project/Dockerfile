@@ -1,29 +1,28 @@
 # ─────────────────────────────────────────────────────
-# MWFA Dockerfile
-# Kali-MCP (stdio) → supergateway (HTTP:8000) + Node.js Backend
+# MWFA Dockerfile (Cloud Hub)
+# Pure Node.js environment for SQLite & MQTT Logging
 # ─────────────────────────────────────────────────────
 
-FROM cyberillo/kali-mcp-server:latest
-
-# Install Node.js 18
-RUN apt-get update && \
-    apt-get install -y curl ca-certificates && \
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
-    apt-get install -y nodejs && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Install supergateway globally (bridges stdio MCP → HTTP/SSE)
-RUN npm install -g supergateway
+FROM node:18-alpine
 
 WORKDIR /app
-COPY . .
+
+# Copy package files first for caching
+COPY backend/package*.json ./backend/
 
 # Install backend deps
 WORKDIR /app/backend
-RUN npm install --production && npx prisma generate
+RUN npm install --production
+
+# Copy all project files
+WORKDIR /app
+COPY . .
+
+# Generate Prisma client
+WORKDIR /app/backend
+RUN npx prisma generate
 
 EXPOSE 3000
 
 # Run DB push and start Node.js backend
 CMD ["sh", "-c", "mkdir -p /data && npx prisma db push --skip-generate && exec node server.js"]
-
