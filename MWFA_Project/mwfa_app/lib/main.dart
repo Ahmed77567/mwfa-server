@@ -1,121 +1,183 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:mqtt_client/mqtt_client.dart';
+import 'package:mqtt_client/mqtt_server_client.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const MWFAApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class MWFAApp extends StatelessWidget {
+  const MWFAApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'MWFA Dashboard',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        brightness: Brightness.dark,
+        primarySwatch: Colors.deepPurple,
+        scaffoldBackgroundColor: const Color(0xFF121212),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const DashboardScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class DashboardScreen extends StatefulWidget {
+  const DashboardScreen({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _DashboardScreenState extends State<DashboardScreen> {
+  final String broker = '3f5f4470310e4cddaae686f16146fdc8.s1.eu.hivemq.cloud';
+  final int port = 8883;
+  final String clientIdentifier = 'flutter_client_${DateTime.now().millisecondsSinceEpoch}';
+  
+  MqttServerClient? client;
+  String connectionStatus = 'Disconnected';
+  List<String> messages = [];
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  @override
+  void initState() {
+    super.initState();
+    if (kIsWeb) {
+      setState(() {
+        connectionStatus = 'Error: Web not supported for raw TCP MQTT. Please run on Windows/Android.';
+        messages.add('Chrome/Web testing does not support standard MQTT over TCP (requires WebSockets). Please stop this and run: flutter run -d windows');
+      });
+    } else {
+      _connectMQTT();
+    }
+  }
+
+  Future<void> _connectMQTT() async {
+    setState(() => connectionStatus = 'Connecting...');
+    
+    try {
+      client = MqttServerClient.withPort(broker, clientIdentifier, port);
+      client!.secure = true;
+      client!.setProtocolV311();
+      client!.keepAlivePeriod = 60;
+      
+      // Bypass cert validation for testing
+      client!.onBadCertificate = (X509Certificate cert) => true;
+
+      final MqttConnectMessage connMess = MqttConnectMessage()
+          .withClientIdentifier(clientIdentifier)
+          .authenticateAs('ahmed_mwfa', '7XP@un@VYvdPjwS')
+          .withWillQos(MqttQos.atLeastOnce);
+      
+      client!.connectionMessage = connMess;
+
+      await client!.connect();
+    } catch (e) {
+      setState(() => connectionStatus = 'Error: $e');
+      client?.disconnect();
+      return;
+    }
+
+    if (client!.connectionStatus!.state == MqttConnectionState.connected) {
+      setState(() => connectionStatus = 'Connected to HiveMQ');
+      
+      // Subscriptions
+      client!.subscribe('mwfa/results/#', MqttQos.atLeastOnce);
+      client!.subscribe('mwfa/data/#', MqttQos.atLeastOnce);
+
+      client!.updates!.listen((List<MqttReceivedMessage<MqttMessage>> c) {
+        final MqttPublishMessage recMess = c[0].payload as MqttPublishMessage;
+        final String pt = MqttPublishPayload.bytesToStringAsString(recMess.payload.message);
+        
+        setState(() {
+          messages.insert(0, '[${c[0].topic}]: $pt');
+        });
+      });
+    } else {
+      setState(() => connectionStatus = 'Failed to connect');
+      client!.disconnect();
+    }
+  }
+
+  void _triggerScan() {
+    if (client != null && client!.connectionStatus?.state == MqttConnectionState.connected) {
+      final builder = MqttClientPayloadBuilder();
+      final payload = jsonEncode({
+        "command": "scan",
+        "target": "scanme.nmap.org",
+        "flags": "-F"
+      });
+      builder.addString(payload);
+      client!.publishMessage('mwfa/commands/device01', MqttQos.atLeastOnce, builder.payload!);
+      
+      setState(() {
+        messages.insert(0, '[OUT -> mwfa/commands/device01]: $payload');
+      });
+    } else {
+      setState(() {
+        messages.insert(0, 'Cannot send command: MQTT is not connected.');
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('MWFA Relay Dashboard'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Center(child: Text(connectionStatus)),
+          )
+        ],
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _triggerScan,
+                  icon: const Icon(Icons.radar),
+                  label: const Text('Trigger Fast Scan'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurpleAccent,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+          ),
+          const Divider(color: Colors.white24),
+          Expanded(
+            child: ListView.builder(
+              itemCount: messages.length,
+              itemBuilder: (context, index) {
+                return Card(
+                  color: const Color(0xFF1E1E1E),
+                  margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Text(
+                      messages[index],
+                      style: TextStyle(
+                        fontFamily: 'monospace', 
+                        fontSize: 12, 
+                        color: messages[index].contains('Error') || messages[index].contains('Cannot') ? Colors.redAccent : Colors.white
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
