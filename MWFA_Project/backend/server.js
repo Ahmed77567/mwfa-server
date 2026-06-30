@@ -259,6 +259,84 @@ app.post('/api/scans/custom', async (req, res) => {
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  ROUTES — Proxy Deep Scan (فحص عميق عبر T-Embed)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/** POST /api/proxy/establish — تفعيل وكيل الفحص على T-Embed */
+app.post('/api/proxy/establish', (req, res) => {
+  const tembedId = req.body.tembedId || 'tembed01';
+  mqttClient.publish(`mwfa/commands/${tembedId}`, {
+    command: 'establish_proxy'
+  });
+  res.json({ message: `Proxy activation command sent to ${tembedId}` });
+});
+
+/** POST /api/proxy/scan — بدء فحص عميق عبر الكالي */
+app.post('/api/proxy/scan', (req, res) => {
+  const { targets, scanProfile, tembedId } = req.body;
+  if (!targets || !Array.isArray(targets) || targets.length === 0) {
+    return res.status(400).json({ error: 'targets array is required' });
+  }
+
+  const taskId = `pscan_${Date.now()}`;
+  mqttClient.publish('mwfa/commands/kali01', {
+    command: 'proxy_scan',
+    targets,
+    scanProfile: scanProfile || 'fast',
+    tembedId: tembedId || 'tembed01',
+    task_id: taskId
+  });
+  res.json({ message: 'Deep scan initiated', task_id: taskId });
+});
+
+/** POST /api/proxy/stop — إيقاف وكيل الفحص */
+app.post('/api/proxy/stop', (req, res) => {
+  const tembedId = req.body.tembedId || 'tembed01';
+  mqttClient.publish(`mwfa/commands/${tembedId}`, {
+    command: 'stop_proxy'
+  });
+  res.json({ message: `Stop proxy command sent to ${tembedId}` });
+});
+
+/** GET /api/proxy/status — حالة وكيل الفحص الحالية */
+app.get('/api/proxy/status', async (req, res) => {
+  try {
+    const tembedId = req.query.tembedId || 'tembed01';
+    const relay = await prisma.relayDevice.findUnique({
+      where: { deviceId: tembedId }
+    });
+    res.json({
+      proxyStatus: relay?.proxyStatus || 'inactive',
+      subnetInfo: relay?.subnetInfo ? JSON.parse(relay.subnetInfo) : null,
+      lastSeen: relay?.lastSeen || null,
+      deviceId: tembedId,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/proxy/results — نتائج فحص عميق */
+app.get('/api/proxy/results', async (req, res) => {
+  try {
+    const { taskId, targetIp, state } = req.query;
+    const where = {};
+    if (taskId)   where.taskId   = taskId;
+    if (targetIp) where.targetIp = targetIp;
+    if (state)    where.state    = state;
+
+    const results = await prisma.proxyScanResult.findMany({
+      where,
+      orderBy: { scannedAt: 'desc' },
+      take: 500,
+    });
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  ROUTES — Legacy HTTP Ingest (للتوافق مع الكود القديم)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -334,6 +412,12 @@ async function start() {
     console.log('   GET  /api/rf');
     console.log('   GET  /api/scans');
     console.log('   POST /api/scans/trigger');
+    console.log('   POST /api/scans/custom');
+    console.log('   POST /api/proxy/establish');
+    console.log('   POST /api/proxy/scan');
+    console.log('   POST /api/proxy/stop');
+    console.log('   GET  /api/proxy/status');
+    console.log('   GET  /api/proxy/results');
     console.log('   GET  /api/logs\n');
   });
 }

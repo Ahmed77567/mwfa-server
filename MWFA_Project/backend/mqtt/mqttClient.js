@@ -100,11 +100,22 @@ function connect() {
         case 'scan_result':
           await handleScanResult(deviceId, parsed);
           break;
+        case 'proxy_status':
+          await handleProxyStatus(deviceId, parsed);
+          break;
+        case 'tcp_result':
+          await handleTcpResult(deviceId, parsed);
+          break;
         case 'cmd':
           // Command topic intended for relay devices or bridge scripts, backend ignores it
           break;
         default:
-          console.log(`[MQTT] Unknown event type: ${eventType}`);
+          // Check for proxy_scan result topics (mwfa/results/proxy_scan/<taskId>)
+          if (topic.startsWith('mwfa/results/proxy_scan/')) {
+            await handleProxyScanReport(topic, parsed);
+          } else {
+            console.log(`[MQTT] Unknown event type: ${eventType}`);
+          }
       }
 
       // تحديث سجل الرسالة كـ "processed"
@@ -340,6 +351,126 @@ async function handleScanResult(deviceId, data) {
   }
 
   console.log(`[MQTT] 🚀 Scan Result for ${data.target}: Open Ports [${(data.openPorts || []).join(', ')}]`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Handler: mwfa/<deviceId>/proxy_status
+// Payload: { status, localIp, gateway, subnet, ssid, bssid }
+// ─────────────────────────────────────────────────────────────────────────────
+async function handleProxyStatus(deviceId, data) {
+  const subnetInfo = JSON.stringify({
+    localIp: data.localIp || null,
+    gateway: data.gateway || null,
+    subnet:  data.subnet  || null,
+    ssid:    data.ssid    || null,
+    bssid:   data.bssid   || null,
+  });
+
+  await prisma.relayDevice.upsert({
+    where:  { deviceId },
+    update: {
+      proxyStatus: data.status || 'unknown',
+      subnetInfo,
+      lastSeen: new Date(),
+      status: 'online',
+    },
+    create: {
+      deviceId,
+      proxyStatus: data.status || 'unknown',
+      subnetInfo,
+      status: 'online',
+      lastSeen: new Date(),
+    },
+  });
+
+  console.log(`[MQTT] 🔧 Proxy Status for ${deviceId}: ${data.status}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Handler: mwfa/<deviceId>/tcp_result
+// Payload: { ip, port, state, ms, banner, task_id } or { event: "scan_complete", ... }
+// ─────────────────────────────────────────────────────────────────────────────
+async function handleTcpResult(deviceId, data) {
+  // Ignore scan_complete events (just status updates)
+  if (data.event === 'scan_complete') {
+    console.log(`[MQTT] 📊 Scan complete for ${data.ip}: ${data.openCount}/${data.total} open`);
+    return;
+  }
+
+  if (!data.ip || !data.port) {
+    console.warn('[MQTT] tcp_result missing ip or port');
+    return;
+  }
+
+  try {
+    await prisma.proxyScanResult.create({
+      data: {
+        taskId:     data.task_id || `auto_${Date.now()}`,
+        targetIp:   data.ip,
+        port:       parseInt(data.port),
+        state:      data.state || 'unknown',
+        banner:     data.banner || null,
+        responseMs: data.ms ? parseInt(data.ms) : null,
+        tembedId:   deviceId,
+      },
+    });
+
+    if (data.state === 'open') {
+      console.log(`[MQTT] 🟢 TCP ${data.ip}:${data.port} → OPEN${data.banner ? ' [' + data.banner.substring(0, 30) + ']' : ''}`);
+    }
+  } catch (err) {
+    console.error('[MQTT] Failed to save tcp_result:', err.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Handler: mwfa/results/proxy_scan/<taskId>
+// Payload: { task_id, targets, profile, results, report, timestamp }
+// ─────────────────────────────────────────────────────────────────────────────
+async function handleProxyScanReport(topic, data) {
+  const taskId = data.task_id || topic.split('/').pop();
+  
+  console.log(`[MQTT] 📋 Proxy Scan Report received — Task: ${taskId}`);
+
+  if (data.error) {
+    console.error(`[MQTT] Proxy scan error: ${data.error}`);
+    return;
+  }
+
+  // Save report as ScanResult for each target
+  for (const target of (data.targets || [])) {
+    const targetResults = (data.results || {})[target] || [];
+    const openPorts = targetResults
+      .filter(r => r.state === 'open')
+      .map(r => `${r.port}/tcp`);
+
+    // Find or create device record for this target
+    const dummyMac = `PROXY-${target.replace(/[^a-zA-Z0-9]/g, '').substring(0, 12)}`;
+    const device = await prisma.device.upsert({
+      where:  { macAddress: dummyMac },
+      update: { ipAddress: target, lastSeen: new Date(), status: 'up' },
+      create: {
+        macAddress: dummyMac,
+        ipAddress:  target,
+        hostname:   target,
+        status:     'up',
+        vendor:     'Proxy Deep Scan Target',
+      },
+    });
+
+    await prisma.scanResult.create({
+      data: {
+        deviceId:    device.id,
+        scanType:    'proxy_deep_scan',
+        status:      'done',
+        mcpToolUsed: 'tembed_tcp_proxy',
+        openPorts:   JSON.stringify(openPorts),
+        rawOutput:   (data.report || '').slice(0, 10000),
+      },
+    });
+  }
+
+  console.log(`[MQTT] ✅ Proxy scan report saved for ${(data.targets || []).length} target(s)`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

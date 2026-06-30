@@ -26,6 +26,8 @@ model RelayDevice {
   ipAddress   String?                              // IP الحالي
   firmware    String?                              // Bruce firmware version
   status      String    @default("offline")        // "online" | "offline" | "scanning"
+  proxyStatus String?   @default("inactive")       // "inactive" | "ready" | "scanning" | "stopped" | "error"
+  subnetInfo  String?                              // JSON: {"gateway":"...","subnet":"...","localIp":"..."}
   lastSeen    DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -168,5 +170,23 @@ model ScanResult {
 
   @@index([deviceId])
   @@index([status])
+  @@index([scannedAt])
+}
+
+/// نتائج فحص عميق فردية (كل بورت على حدة) عبر T-Embed Proxy
+model ProxyScanResult {
+  id          Int      @id @default(autoincrement())
+  taskId      String                               // معرف المهمة الأم
+  targetIp    String                               // IP الهدف
+  port        Int                                  // رقم البورت
+  state       String                               // "open" | "closed" | "filtered"
+  banner      String?                              // Service banner (إن وُجد)
+  responseMs  Int?                                 // زمن الاستجابة بالملي ثانية
+  tembedId    String                               // معرف الـ T-Embed المُنفِذ
+  scannedAt   DateTime @default(now())
+
+  @@index([taskId])
+  @@index([targetIp])
+  @@index([state])
   @@index([scannedAt])
 }
